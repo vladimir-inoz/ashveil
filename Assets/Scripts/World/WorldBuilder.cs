@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Ashveil
@@ -63,12 +64,40 @@ namespace Ashveil
 
         static void BuildTerrain(Transform root)
         {
-            int res = 512;
+            const float nearSize = 10000f;
+            var nearMat = Palette.Terrain();
+            var farMat = Palette.TerrainFar(nearSize * 0.5f - 20f);
+
+            var inner = BuildHeightMesh("TerrainNear", nearSize, 512, 0f, 0.08f);
+            var outer = BuildHeightMesh("TerrainFar", WorldSize, 280, 0f, 0f);
+
+            SpawnTerrainChunk(root, inner, nearMat, true);
+            SpawnTerrainChunk(root, outer, farMat, true);
+            TerrainMesh = inner;
+        }
+
+        static void SpawnTerrainChunk(Transform root, Mesh mesh, Material mat, bool collider)
+        {
+            var go = New(mesh.name, root);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            mr.receiveShadows = true;
+            if (collider)
+            {
+                var mc = go.AddComponent<MeshCollider>();
+                mc.sharedMesh = mesh;
+                if (TerrainCol == null) TerrainCol = mc;
+            }
+            go.isStatic = true;
+        }
+
+        static Mesh BuildHeightMesh(string name, float size, int res, float holeHalf, float yBias)
+        {
             var verts = new Vector3[res * res];
             var uvs = new Vector2[res * res];
-            var tris = new int[(res - 1) * (res - 1) * 6];
-            float half = WorldSize * 0.5f;
-
+            float half = size * 0.5f;
             for (int z = 0; z < res; z++)
             for (int x = 0; x < res; x++)
             {
@@ -76,45 +105,36 @@ namespace Ashveil
                 float v = z / (float)(res - 1);
                 float wx = Mathf.Lerp(-half, half, u);
                 float wz = Mathf.Lerp(-half, half, v);
-                float h = Height(wx, wz);
                 int i = z * res + x;
-                verts[i] = new Vector3(wx, h, wz);
-                uvs[i] = new Vector2(wx * 0.08f, wz * 0.08f);
+                verts[i] = new Vector3(wx, Height(wx, wz) + yBias, wz);
+                uvs[i] = new Vector2(wx, wz);
             }
 
-            int tidx = 0;
+            var tris = new List<int>((res - 1) * (res - 1) * 6);
             for (int z = 0; z < res - 1; z++)
             for (int x = 0; x < res - 1; x++)
             {
                 int i = z * res + x;
-                tris[tidx++] = i;
-                tris[tidx++] = i + res;
-                tris[tidx++] = i + 1;
-                tris[tidx++] = i + 1;
-                tris[tidx++] = i + res;
-                tris[tidx++] = i + res + 1;
+                float cx = (verts[i].x + verts[i + 1].x) * 0.5f;
+                float cz = (verts[i].z + verts[i + res].z) * 0.5f;
+                if (holeHalf > 0f && Mathf.Abs(cx) < holeHalf && Mathf.Abs(cz) < holeHalf)
+                    continue;
+                tris.Add(i);
+                tris.Add(i + res);
+                tris.Add(i + 1);
+                tris.Add(i + 1);
+                tris.Add(i + res);
+                tris.Add(i + res + 1);
             }
 
-            var mesh = new Mesh { name = "Kessara", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
             mesh.vertices = verts;
             mesh.uv = uvs;
-            mesh.triangles = tris;
+            mesh.SetTriangles(tris, 0);
             mesh.RecalculateNormals();
             mesh.RecalculateTangents();
             mesh.RecalculateBounds();
-            TerrainMesh = mesh;
-
-            var go = New("Terrain", root);
-            var mf = go.AddComponent<MeshFilter>();
-            mf.sharedMesh = mesh;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = Palette.Terrain();
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            mr.receiveShadows = true;
-            var mc = go.AddComponent<MeshCollider>();
-            mc.sharedMesh = mesh;
-            TerrainCol = mc;
-            go.isStatic = true;
+            return mesh;
         }
 
         public static float Height(float x, float z)
@@ -124,6 +144,8 @@ namespace Ashveil
             float n3 = Mathf.PerlinNoise((x + 12) * 0.0038f, (z + 40) * 0.0038f);
             float ridge = 1f - Mathf.Abs(Mathf.PerlinNoise(x * 0.00022f, z * 0.00022f) * 2f - 1f);
             float h = n * 160f + n2 * 55f + n3 * 18f + ridge * 140f;
+            h += Mathf.PerlinNoise((x + 3f) * 0.018f, (z + 9f) * 0.018f) * 4.2f;
+            h += Mathf.PerlinNoise((x + 40f) * 0.055f, (z + 18f) * 0.055f) * 1.4f;
             float crater = Vector2.Distance(new Vector2(x, z), new Vector2(900, 1400));
             h += Mathf.Clamp01(1f - crater / 520f) * -55f;
             float half = WorldSize * 0.5f;
@@ -174,32 +196,126 @@ namespace Ashveil
         static void ScatterScrub(Transform root)
         {
             var rng = new System.Random(77);
-            var scrub = New("Scrub", root).transform;
-            for (int i = 0; i < 1600; i++)
-            {
-                float x = (float)(rng.NextDouble() * 2 - 1) * 6500f;
-                float z = (float)(rng.NextDouble() * 2 - 1) * 6500f;
-                var p = OnGround(x, z, 0f);
-                if (p.y < WaterHeight + 6f) continue;
-                if (Mathf.PerlinNoise(x * 0.004f, z * 0.004f) < 0.46f) continue;
+            var field = New("Scrub", root);
+            var variants = new[] { MakeBushMesh(1), MakeBushMesh(2), MakeBushMesh(3) };
+            var batches = new List<Matrix4x4>[variants.Length];
+            for (int i = 0; i < batches.Length; i++) batches[i] = new List<Matrix4x4>(400);
 
-                bool tuft = rng.NextDouble() < 0.55;
-                var bush = GameObject.CreatePrimitive(tuft ? PrimitiveType.Sphere : PrimitiveType.Capsule);
-                bush.name = "Scrub";
-                bush.transform.SetParent(scrub, false);
-                float s = 0.7f + (float)rng.NextDouble() * 2.4f;
-                bush.transform.position = p + Vector3.up * (tuft ? s * 0.28f : s * 0.55f);
-                bush.transform.localScale = tuft
-                    ? new Vector3(s * 1.6f, s * 0.55f, s * 1.6f)
-                    : new Vector3(s * 0.7f, s * 0.9f, s * 0.7f);
-                bush.transform.rotation = Quaternion.Euler(0, rng.Next(360), 0);
-                Object.Destroy(bush.GetComponent<Collider>());
-                Color sage = Color.Lerp(
-                    new Color(0.24f, 0.29f, 0.12f),
-                    new Color(0.36f, 0.28f, 0.12f),
-                    (float)rng.NextDouble());
-                Palette.ApplyLit(bush.GetComponent<Renderer>(), sage);
+            for (int c = 0; c < 90; c++)
+            {
+                float cx = (float)(rng.NextDouble() * 2 - 1) * 5200f;
+                float cz = (float)(rng.NextDouble() * 2 - 1) * 5200f;
+                if (Mathf.PerlinNoise(cx * 0.0035f, cz * 0.0035f) < 0.42f) continue;
+                int count = 5 + rng.Next(12);
+                for (int i = 0; i < count; i++)
+                {
+                    float x = cx + (float)(rng.NextDouble() * 2 - 1) * 28f;
+                    float z = cz + (float)(rng.NextDouble() * 2 - 1) * 28f;
+                    var p = OnGround(x, z, 0f);
+                    if (p.y < WaterHeight + 6f) continue;
+                    float s = 0.85f + (float)rng.NextDouble() * 1.7f;
+                    var rot = Quaternion.Euler(0f, rng.Next(360), 0f);
+                    int vi = rng.Next(variants.Length);
+                    batches[vi].Add(Matrix4x4.TRS(p, rot, Vector3.one * s));
+                }
             }
+
+            var leaf = Palette.Lit(new Color(0.27f, 0.32f, 0.14f));
+            for (int i = 0; i < variants.Length; i++)
+            {
+                if (batches[i].Count == 0) continue;
+                var batch = field.AddComponent<InstanceBatch>();
+                batch.Mesh = variants[i];
+                batch.Material = leaf;
+                batch.Matrices = batches[i].ToArray();
+            }
+        }
+
+        static Mesh _sphereMesh;
+        static Mesh _cylMesh;
+
+        static Mesh SphereMesh
+        {
+            get
+            {
+                if (_sphereMesh == null) _sphereMesh = GrabPrimitive(PrimitiveType.Sphere);
+                return _sphereMesh;
+            }
+        }
+
+        static Mesh CylMesh
+        {
+            get
+            {
+                if (_cylMesh == null) _cylMesh = GrabPrimitive(PrimitiveType.Cylinder);
+                return _cylMesh;
+            }
+        }
+
+        static Mesh GrabPrimitive(PrimitiveType type)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            var mesh = Object.Instantiate(go.GetComponent<MeshFilter>().sharedMesh);
+            Object.Destroy(go);
+            mesh.hideFlags = HideFlags.HideAndDontSave;
+            return mesh;
+        }
+
+        static Mesh MakeBushMesh(int seed)
+        {
+            var rng = new System.Random(seed * 97 + 11);
+            var verts = new List<Vector3>(512);
+            var norms = new List<Vector3>(512);
+            var tris = new List<int>(1024);
+            AppendMesh(verts, norms, tris, CylMesh,
+                Matrix4x4.TRS(new Vector3(0f, 0.32f, 0f), Quaternion.identity, new Vector3(0.14f, 0.34f, 0.14f)));
+
+            int branches = 4 + rng.Next(3);
+            for (int i = 0; i < branches; i++)
+            {
+                float yaw = i * 137.5f + (float)rng.NextDouble() * 20f;
+                float pitch = 18f + (float)rng.NextDouble() * 28f;
+                var rot = Quaternion.Euler(pitch, yaw, 0f);
+                var pos = rot * new Vector3(0f, 0.55f, 0f) + Vector3.up * 0.25f;
+                AppendMesh(verts, norms, tris, CylMesh,
+                    Matrix4x4.TRS(pos, rot, new Vector3(0.05f, 0.28f + (float)rng.NextDouble() * 0.18f, 0.05f)));
+            }
+
+            int clumps = 12 + rng.Next(8);
+            for (int i = 0; i < clumps; i++)
+            {
+                float ang = (float)rng.NextDouble() * 6.28318f;
+                float rad = 0.12f + (float)rng.NextDouble() * 0.72f;
+                float y = 0.55f + (float)rng.NextDouble() * 1.05f;
+                var pos = new Vector3(Mathf.Cos(ang) * rad, y, Mathf.Sin(ang) * rad);
+                float s = 0.22f + (float)rng.NextDouble() * 0.34f;
+                var rot = Quaternion.Euler(rng.Next(50), rng.Next(360), rng.Next(50));
+                AppendMesh(verts, norms, tris, SphereMesh,
+                    Matrix4x4.TRS(pos, rot, new Vector3(s * 1.35f, s * 0.85f, s * 1.25f)));
+            }
+
+            var mesh = new Mesh { name = "Bush" + seed, hideFlags = HideFlags.HideAndDontSave };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(norms);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        static void AppendMesh(List<Vector3> verts, List<Vector3> norms, List<int> tris, Mesh src, Matrix4x4 m)
+        {
+            int baseIndex = verts.Count;
+            var sv = src.vertices;
+            var sn = src.normals;
+            var st = src.triangles;
+            var nrm = m.inverse.transpose;
+            for (int i = 0; i < sv.Length; i++)
+            {
+                verts.Add(m.MultiplyPoint3x4(sv[i]));
+                norms.Add(nrm.MultiplyVector(sn[i]).normalized);
+            }
+            for (int i = 0; i < st.Length; i++)
+                tris.Add(baseIndex + st[i]);
         }
 
         static void BuildConcordBase(Transform root, Vector3 approx)
@@ -407,6 +523,28 @@ namespace Ashveil
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             return go;
+        }
+    }
+
+    public class InstanceBatch : MonoBehaviour
+    {
+        public Mesh Mesh;
+        public Material Material;
+        public Matrix4x4[] Matrices;
+        static readonly Matrix4x4[] Chunk = new Matrix4x4[1023];
+
+        void Update()
+        {
+            if (Mesh == null || Material == null || Matrices == null || Matrices.Length == 0) return;
+            int i = 0;
+            while (i < Matrices.Length)
+            {
+                int n = Mathf.Min(1023, Matrices.Length - i);
+                System.Array.Copy(Matrices, i, Chunk, 0, n);
+                Graphics.DrawMeshInstanced(Mesh, 0, Material, Chunk, n, null,
+                    UnityEngine.Rendering.ShadowCastingMode.On, true);
+                i += n;
+            }
         }
     }
 }

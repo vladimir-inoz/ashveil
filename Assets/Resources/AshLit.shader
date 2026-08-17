@@ -18,6 +18,7 @@ Shader "Ashveil/Lit"
             #pragma fragment frag
             #pragma multi_compile_fwdbase
             #pragma multi_compile_fog
+            #pragma multi_compile_instancing
             #include "UnityCG.cginc"
             #include "Lighting.cginc"
             #include "AutoLight.cginc"
@@ -28,6 +29,7 @@ Shader "Ashveil/Lit"
             {
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -36,11 +38,14 @@ Shader "Ashveil/Lit"
                 float3 worldN : TEXCOORD0;
                 UNITY_FOG_COORDS(1)
                 SHADOW_COORDS(2)
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             v2f vert(appdata v)
             {
                 v2f o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.worldN = UnityObjectToWorldNormal(v.normal);
                 TRANSFER_SHADOW(o);

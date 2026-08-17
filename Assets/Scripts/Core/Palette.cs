@@ -25,7 +25,6 @@ namespace Ashveil
         public static readonly Color Missile = new Color(1f, 0.45f, 0.1f, 1f);
 
         static Texture2D _white;
-        static Texture2D _sand;
         static Shader _unlitShader;
         static Shader _alphaShader;
         static Shader _skyShader;
@@ -109,15 +108,6 @@ namespace Ashveil
             }
         }
 
-        public static Texture2D SandTex
-        {
-            get
-            {
-                if (_sand == null) _sand = MakeSandTex();
-                return _sand;
-            }
-        }
-
         public static Material Unlit => Colored(Color.white);
 
         public static Material Particle => Colored(new Color(1f, 0.55f, 0.12f));
@@ -137,7 +127,7 @@ namespace Ashveil
         {
             var sh = LitShader;
             if (sh == null) return Colored(c);
-            var m = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            var m = new Material(sh) { hideFlags = HideFlags.HideAndDontSave, enableInstancing = true };
             m.color = c;
             if (m.HasProperty("_Color")) m.SetColor("_Color", c);
             return m;
@@ -149,42 +139,18 @@ namespace Ashveil
             var sh = TerrainShader;
             if (sh == null) return Colored(TerrainLow);
             _terrainMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
-            if (_terrainMat.HasProperty("_MainTex")) _terrainMat.SetTexture("_MainTex", SandTex);
-            if (_terrainMat.HasProperty("_Tiling")) _terrainMat.SetFloat("_Tiling", 0.085f);
             if (_terrainMat.HasProperty("_Sand")) _terrainMat.SetColor("_Sand", new Color(0.56f, 0.41f, 0.24f));
             if (_terrainMat.HasProperty("_Dirt")) _terrainMat.SetColor("_Dirt", new Color(0.33f, 0.22f, 0.12f));
-            if (_terrainMat.HasProperty("_Sage")) _terrainMat.SetColor("_Sage", new Color(0.26f, 0.30f, 0.13f));
-            if (_terrainMat.HasProperty("_Rock")) _terrainMat.SetColor("_Rock", new Color(0.30f, 0.22f, 0.15f));
+            if (_terrainMat.HasProperty("_Rock")) _terrainMat.SetColor("_Rock", new Color(0.30f, 0.21f, 0.14f));
+            if (_terrainMat.HasProperty("_ClipRadius")) _terrainMat.SetFloat("_ClipRadius", 0f);
             return _terrainMat;
         }
 
-        static Texture2D MakeSandTex()
+        public static Material TerrainFar(float clipRadius)
         {
-            const int s = 512;
-            var tex = new Texture2D(s, s, TextureFormat.RGBA32, true)
-            {
-                wrapMode = TextureWrapMode.Repeat,
-                filterMode = FilterMode.Bilinear,
-                anisoLevel = 8,
-                hideFlags = HideFlags.HideAndDontSave,
-                name = "SandGrain"
-            };
-            var px = new Color[s * s];
-            for (int y = 0; y < s; y++)
-            for (int x = 0; x < s; x++)
-            {
-                float u = x / (float)s;
-                float v = y / (float)s;
-                float n = Mathf.PerlinNoise(u * 28f, v * 28f);
-                float n2 = Mathf.PerlinNoise(u * 90f + 8f, v * 90f + 3f);
-                float n3 = Mathf.PerlinNoise(u * 220f + 40f, v * 220f);
-                float grain = 0.62f + n * 0.22f + n2 * 0.12f + (n3 - 0.5f) * 0.08f;
-                if (((x * 13 + y * 7) & 31) == 0) grain *= 0.72f;
-                px[y * s + x] = new Color(grain, grain, grain, 1f);
-            }
-            tex.SetPixels(px);
-            tex.Apply(true, true);
-            return tex;
+            var m = new Material(Terrain()) { hideFlags = HideFlags.HideAndDontSave };
+            m.SetFloat("_ClipRadius", clipRadius);
+            return m;
         }
 
         public static Material Skybox()
