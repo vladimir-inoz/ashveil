@@ -6,7 +6,7 @@ namespace Ashveil
     {
         public static MeshCollider TerrainCol;
         public static Mesh TerrainMesh;
-        public static float WorldSize = 10000f;
+        public static float WorldSize = 48000f;
         public static float WaterHeight = 12f;
 
         public static void Build(Transform root)
@@ -15,45 +15,56 @@ namespace Ashveil
             BuildTerrain(root);
             BuildWater(root);
             ScatterRocks(root);
+            ScatterScrub(root);
             BuildConcordBase(root, new Vector3(-220f, 0f, -80f));
             BuildTharneBase(root, new Vector3(520f, 0f, 480f));
         }
 
         static void BuildLights(Transform root)
         {
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.shadowResolution = ShadowResolution.High;
+            QualitySettings.shadowCascades = 4;
+            QualitySettings.shadowDistance = 2800f;
+            QualitySettings.antiAliasing = 2;
+            QualitySettings.pixelLightCount = 2;
+
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogColor = new Color(0.78f, 0.58f, 0.35f);
-            RenderSettings.fogStartDistance = 900f;
-            RenderSettings.fogEndDistance = 5200f;
+            RenderSettings.fogColor = new Color(0.82f, 0.64f, 0.40f);
+            RenderSettings.fogStartDistance = 2200f;
+            RenderSettings.fogEndDistance = 14500f;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.85f, 0.7f, 0.45f);
-            RenderSettings.ambientEquatorColor = new Color(0.55f, 0.4f, 0.28f);
-            RenderSettings.ambientGroundColor = new Color(0.18f, 0.12f, 0.08f);
+            RenderSettings.ambientSkyColor = new Color(0.72f, 0.58f, 0.38f);
+            RenderSettings.ambientEquatorColor = new Color(0.48f, 0.36f, 0.22f);
+            RenderSettings.ambientGroundColor = new Color(0.16f, 0.11f, 0.07f);
             var sky = Palette.Skybox();
             if (sky != null) RenderSettings.skybox = sky;
 
             var sun = New("TwinSunA", root);
             var l = sun.AddComponent<Light>();
             l.type = LightType.Directional;
-            l.color = new Color(1f, 0.88f, 0.65f);
-            l.intensity = 1.15f;
+            l.color = new Color(1f, 0.86f, 0.62f);
+            l.intensity = 1.35f;
             l.shadows = LightShadows.Soft;
-            sun.transform.rotation = Quaternion.Euler(38f, 140f, 0f);
+            l.shadowStrength = 0.78f;
+            l.shadowBias = 0.04f;
+            l.shadowNormalBias = 0.6f;
+            sun.transform.rotation = Quaternion.Euler(42f, 148f, 0f);
 
             var sun2 = New("TwinSunB", root);
             var l2 = sun2.AddComponent<Light>();
             l2.type = LightType.Directional;
-            l2.color = new Color(1f, 0.55f, 0.28f);
-            l2.intensity = 0.35f;
+            l2.color = new Color(1f, 0.52f, 0.26f);
+            l2.intensity = 0.18f;
+            l2.shadows = LightShadows.None;
             sun2.transform.rotation = Quaternion.Euler(22f, 210f, 0f);
         }
 
         static void BuildTerrain(Transform root)
         {
-            int res = 256;
+            int res = 512;
             var verts = new Vector3[res * res];
-            var cols = new Color[res * res];
             var uvs = new Vector2[res * res];
             var tris = new int[(res - 1) * (res - 1) * 6];
             float half = WorldSize * 0.5f;
@@ -68,10 +79,7 @@ namespace Ashveil
                 float h = Height(wx, wz);
                 int i = z * res + x;
                 verts[i] = new Vector3(wx, h, wz);
-                uvs[i] = new Vector2(u * 18f, v * 18f);
-                float t = Mathf.InverseLerp(WaterHeight - 4f, 90f, h);
-                cols[i] = Color.Lerp(new Color(0.35f, 0.28f, 0.16f), Palette.TerrainHigh, t);
-                if (h < WaterHeight + 2f) cols[i] = Color.Lerp(new Color(0.28f, 0.32f, 0.18f), cols[i], 0.4f);
+                uvs[i] = new Vector2(wx * 0.08f, wz * 0.08f);
             }
 
             int tidx = 0;
@@ -89,10 +97,10 @@ namespace Ashveil
 
             var mesh = new Mesh { name = "Kessara", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
             mesh.vertices = verts;
-            mesh.colors = cols;
             mesh.uv = uvs;
             mesh.triangles = tris;
             mesh.RecalculateNormals();
+            mesh.RecalculateTangents();
             mesh.RecalculateBounds();
             TerrainMesh = mesh;
 
@@ -100,7 +108,9 @@ namespace Ashveil
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = Palette.Colored(Color.white);
+            mr.sharedMaterial = Palette.Terrain();
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            mr.receiveShadows = true;
             var mc = go.AddComponent<MeshCollider>();
             mc.sharedMesh = mesh;
             TerrainCol = mc;
@@ -116,10 +126,11 @@ namespace Ashveil
             float h = n * 160f + n2 * 55f + n3 * 18f + ridge * 140f;
             float crater = Vector2.Distance(new Vector2(x, z), new Vector2(900, 1400));
             h += Mathf.Clamp01(1f - crater / 520f) * -55f;
+            float half = WorldSize * 0.5f;
             float edge = Mathf.Max(
-                Mathf.InverseLerp(4200f, 4900f, Mathf.Abs(x)),
-                Mathf.InverseLerp(4200f, 4900f, Mathf.Abs(z)));
-            h -= edge * 90f;
+                Mathf.InverseLerp(half - 1800f, half, Mathf.Abs(x)),
+                Mathf.InverseLerp(half - 1800f, half, Mathf.Abs(z)));
+            h -= edge * 40f;
             return Mathf.Max(2f, h);
         }
 
@@ -143,19 +154,51 @@ namespace Ashveil
         {
             var rng = new System.Random(2419);
             var rocks = New("Rocks", root).transform;
-            for (int i = 0; i < 140; i++)
+            for (int i = 0; i < 420; i++)
             {
-                float x = (float)(rng.NextDouble() * 2 - 1) * 4200f;
-                float z = (float)(rng.NextDouble() * 2 - 1) * 4200f;
+                float x = (float)(rng.NextDouble() * 2 - 1) * 9000f;
+                float z = (float)(rng.NextDouble() * 2 - 1) * 9000f;
                 var p = OnGround(x, z, 0f);
                 if (p.y < WaterHeight + 4f) continue;
                 var rock = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 rock.name = "Rock";
                 rock.transform.SetParent(rocks, false);
                 rock.transform.position = p;
-                rock.transform.localScale = new Vector3(8 + rng.Next(18), 5 + rng.Next(16), 8 + rng.Next(18));
-                rock.transform.rotation = Quaternion.Euler(0, rng.Next(360), rng.Next(12));
-                Palette.ApplyColor(rock.GetComponent<Renderer>(), Palette.Rock);
+                rock.transform.localScale = new Vector3(6 + rng.Next(22), 4 + rng.Next(14), 6 + rng.Next(22));
+                rock.transform.rotation = Quaternion.Euler(rng.Next(18), rng.Next(360), rng.Next(18));
+                Object.Destroy(rock.GetComponent<Collider>());
+                Palette.ApplyLit(rock.GetComponent<Renderer>(), Color.Lerp(Palette.Rock, Palette.TerrainLow, (float)rng.NextDouble() * 0.45f));
+            }
+        }
+
+        static void ScatterScrub(Transform root)
+        {
+            var rng = new System.Random(77);
+            var scrub = New("Scrub", root).transform;
+            for (int i = 0; i < 1600; i++)
+            {
+                float x = (float)(rng.NextDouble() * 2 - 1) * 6500f;
+                float z = (float)(rng.NextDouble() * 2 - 1) * 6500f;
+                var p = OnGround(x, z, 0f);
+                if (p.y < WaterHeight + 6f) continue;
+                if (Mathf.PerlinNoise(x * 0.004f, z * 0.004f) < 0.46f) continue;
+
+                bool tuft = rng.NextDouble() < 0.55;
+                var bush = GameObject.CreatePrimitive(tuft ? PrimitiveType.Sphere : PrimitiveType.Capsule);
+                bush.name = "Scrub";
+                bush.transform.SetParent(scrub, false);
+                float s = 0.7f + (float)rng.NextDouble() * 2.4f;
+                bush.transform.position = p + Vector3.up * (tuft ? s * 0.28f : s * 0.55f);
+                bush.transform.localScale = tuft
+                    ? new Vector3(s * 1.6f, s * 0.55f, s * 1.6f)
+                    : new Vector3(s * 0.7f, s * 0.9f, s * 0.7f);
+                bush.transform.rotation = Quaternion.Euler(0, rng.Next(360), 0);
+                Object.Destroy(bush.GetComponent<Collider>());
+                Color sage = Color.Lerp(
+                    new Color(0.24f, 0.29f, 0.12f),
+                    new Color(0.36f, 0.28f, 0.12f),
+                    (float)rng.NextDouble());
+                Palette.ApplyLit(bush.GetComponent<Renderer>(), sage);
             }
         }
 
@@ -187,7 +230,7 @@ namespace Ashveil
             pad.transform.SetParent(root, false);
             pad.transform.position = p + Vector3.up * 0.4f;
             pad.transform.localScale = new Vector3(48, 0.8f, 48);
-            Palette.ApplyColor(pad.GetComponent<Renderer>(), Color.Lerp(c, Palette.Rock, 0.6f));
+            Palette.ApplyLit(pad.GetComponent<Renderer>(), Color.Lerp(c, Palette.Rock, 0.6f));
         }
 
         static void Hangar(string name, Transform root, Vector3 p, Color hull, Color accent, bool objective)
@@ -198,12 +241,12 @@ namespace Ashveil
             var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
             body.transform.SetParent(go.transform, false);
             body.transform.localScale = new Vector3(42, 16, 28);
-            Palette.ApplyColor(body.GetComponent<Renderer>(), hull);
+            Palette.ApplyLit(body.GetComponent<Renderer>(), hull);
             var stripe = GameObject.CreatePrimitive(PrimitiveType.Cube);
             stripe.transform.SetParent(go.transform, false);
             stripe.transform.localPosition = new Vector3(0, 8.2f, 0);
             stripe.transform.localScale = new Vector3(44, 1.2f, 6);
-            Palette.ApplyColor(stripe.GetComponent<Renderer>(), accent);
+            Palette.ApplyLit(stripe.GetComponent<Renderer>(), accent);
             var unit = go.AddComponent<CombatUnit>();
             unit.DisplayName = objective ? "Ангар Тарна" : "Ангар Конкорда";
             unit.Faction = objective ? Faction.Tharne : Faction.Concord;
@@ -356,7 +399,7 @@ namespace Ashveil
             p.transform.localRotation = rot;
             p.transform.localScale = scale;
             Object.Destroy(p.GetComponent<Collider>());
-            Palette.ApplyColor(p.GetComponent<Renderer>(), color);
+            Palette.ApplyLit(p.GetComponent<Renderer>(), color);
         }
 
         static GameObject New(string name, Transform parent)

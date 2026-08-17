@@ -25,9 +25,13 @@ namespace Ashveil
         public static readonly Color Missile = new Color(1f, 0.45f, 0.1f, 1f);
 
         static Texture2D _white;
+        static Texture2D _sand;
         static Shader _unlitShader;
         static Shader _alphaShader;
         static Shader _skyShader;
+        static Shader _litShader;
+        static Shader _terrainShader;
+        static Material _terrainMat;
 
         public static Texture2D White
         {
@@ -81,6 +85,39 @@ namespace Ashveil
             }
         }
 
+        public static Shader LitShader
+        {
+            get
+            {
+                if (_litShader == null)
+                    _litShader = Resources.Load<Shader>("AshLit")
+                                 ?? Shader.Find("Ashveil/Lit")
+                                 ?? UnlitShader;
+                return _litShader;
+            }
+        }
+
+        public static Shader TerrainShader
+        {
+            get
+            {
+                if (_terrainShader == null)
+                    _terrainShader = Resources.Load<Shader>("AshTerrain")
+                                     ?? Shader.Find("Ashveil/Terrain")
+                                     ?? LitShader;
+                return _terrainShader;
+            }
+        }
+
+        public static Texture2D SandTex
+        {
+            get
+            {
+                if (_sand == null) _sand = MakeSandTex();
+                return _sand;
+            }
+        }
+
         public static Material Unlit => Colored(Color.white);
 
         public static Material Particle => Colored(new Color(1f, 0.55f, 0.12f));
@@ -96,6 +133,60 @@ namespace Ashveil
             return m;
         }
 
+        public static Material Lit(Color c)
+        {
+            var sh = LitShader;
+            if (sh == null) return Colored(c);
+            var m = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            m.color = c;
+            if (m.HasProperty("_Color")) m.SetColor("_Color", c);
+            return m;
+        }
+
+        public static Material Terrain()
+        {
+            if (_terrainMat != null) return _terrainMat;
+            var sh = TerrainShader;
+            if (sh == null) return Colored(TerrainLow);
+            _terrainMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            if (_terrainMat.HasProperty("_MainTex")) _terrainMat.SetTexture("_MainTex", SandTex);
+            if (_terrainMat.HasProperty("_Tiling")) _terrainMat.SetFloat("_Tiling", 0.085f);
+            if (_terrainMat.HasProperty("_Sand")) _terrainMat.SetColor("_Sand", new Color(0.56f, 0.41f, 0.24f));
+            if (_terrainMat.HasProperty("_Dirt")) _terrainMat.SetColor("_Dirt", new Color(0.33f, 0.22f, 0.12f));
+            if (_terrainMat.HasProperty("_Sage")) _terrainMat.SetColor("_Sage", new Color(0.26f, 0.30f, 0.13f));
+            if (_terrainMat.HasProperty("_Rock")) _terrainMat.SetColor("_Rock", new Color(0.30f, 0.22f, 0.15f));
+            return _terrainMat;
+        }
+
+        static Texture2D MakeSandTex()
+        {
+            const int s = 512;
+            var tex = new Texture2D(s, s, TextureFormat.RGBA32, true)
+            {
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear,
+                anisoLevel = 8,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "SandGrain"
+            };
+            var px = new Color[s * s];
+            for (int y = 0; y < s; y++)
+            for (int x = 0; x < s; x++)
+            {
+                float u = x / (float)s;
+                float v = y / (float)s;
+                float n = Mathf.PerlinNoise(u * 28f, v * 28f);
+                float n2 = Mathf.PerlinNoise(u * 90f + 8f, v * 90f + 3f);
+                float n3 = Mathf.PerlinNoise(u * 220f + 40f, v * 220f);
+                float grain = 0.62f + n * 0.22f + n2 * 0.12f + (n3 - 0.5f) * 0.08f;
+                if (((x * 13 + y * 7) & 31) == 0) grain *= 0.72f;
+                px[y * s + x] = new Color(grain, grain, grain, 1f);
+            }
+            tex.SetPixels(px);
+            tex.Apply(true, true);
+            return tex;
+        }
+
         public static Material Skybox()
         {
             var sh = SkyShader;
@@ -103,13 +194,20 @@ namespace Ashveil
             var m = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
             if (m.HasProperty("_SkyTop")) m.SetColor("_SkyTop", new Color(0.45f, 0.58f, 0.88f));
             if (m.HasProperty("_SkyHorizon")) m.SetColor("_SkyHorizon", new Color(0.95f, 0.62f, 0.28f));
-            if (m.HasProperty("_Ground")) m.SetColor("_Ground", new Color(0.38f, 0.24f, 0.12f));
+            if (m.HasProperty("_Ground")) m.SetColor("_Ground", new Color(0.42f, 0.30f, 0.16f));
             return m;
         }
 
         public static void ApplyColor(Renderer r, Color c, bool transparent = false)
         {
             r.sharedMaterial = Colored(c, transparent);
+        }
+
+        public static void ApplyLit(Renderer r, Color c)
+        {
+            r.sharedMaterial = Lit(c);
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            r.receiveShadows = true;
         }
     }
 }

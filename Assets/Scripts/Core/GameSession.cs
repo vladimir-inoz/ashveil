@@ -146,7 +146,7 @@ namespace Ashveil
             cockpit.transform.localPosition = new Vector3(0f, 0.55f, 3.6f);
             cockpit.transform.localRotation = Quaternion.identity;
             cockpit.nearClipPlane = 0.05f;
-            cockpit.farClipPlane = 16000f;
+            cockpit.farClipPlane = 18000f;
             cockpit.fieldOfView = 75f;
             cockpit.depth = 2;
             cockpit.clearFlags = CameraClearFlags.Skybox;
@@ -158,7 +158,7 @@ namespace Ashveil
             chase.enabled = false;
             chase.depth = 2;
             chase.nearClipPlane = 0.2f;
-            chase.farClipPlane = 16000f;
+            chase.farClipPlane = 18000f;
             chase.clearFlags = CameraClearFlags.Skybox;
             chase.backgroundColor = new Color(0.78f, 0.58f, 0.35f);
             Player.SetupPlayer(cockpit, chase);

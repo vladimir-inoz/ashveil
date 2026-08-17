@@ -67,7 +67,7 @@ public static class GameBuild
 
     static void IncludeGameShaders()
     {
-        var names = new[] { "Ashveil/Unlit", "Ashveil/UnlitAlpha", "Ashveil/Sky" };
+        var names = new[] { "Ashveil/Unlit", "Ashveil/UnlitAlpha", "Ashveil/Sky", "Ashveil/Terrain", "Ashveil/Lit" };
         var so = new SerializedObject(GraphicsSettings.GetGraphicsSettings());
         var arr = so.FindProperty("m_AlwaysIncludedShaders");
         if (arr == null) return;
