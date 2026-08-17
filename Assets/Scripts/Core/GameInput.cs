@@ -68,12 +68,11 @@ namespace Ashveil
         {
             get
             {
-#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+#if ENABLE_INPUT_SYSTEM
                 var m = UnityEngine.InputSystem.Mouse.current;
-                return m != null ? m.delta.ReadValue() : Vector2.zero;
-#else
-                return Input.mousePositionDelta;
+                if (m != null) return m.delta.ReadValue();
 #endif
+                return new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * 20f;
             }
         }
 

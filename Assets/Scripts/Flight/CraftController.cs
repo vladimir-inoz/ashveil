@@ -18,6 +18,7 @@ namespace Ashveil
         public float PitchRate = 70f;
         public float YawRate = 55f;
         public float RollRate = 100f;
+        public float MouseSens = 0.14f;
         public float MouseDeadzone = 0.08f;
 
         public float Energy = 100f;
@@ -61,16 +62,16 @@ namespace Ashveil
             CockpitCam = cockpit;
             ChaseCam = chase;
             MouseOffset = Vector2.zero;
-            _ignoreMouse = 3;
+            _ignoreMouse = 2;
             _speed = Throttle * MaxSpeed;
-            Velocity = transform.forward * _speed;
+            Velocity = FlatForward() * _speed;
             ApplyCamera();
         }
 
         public void ResetStick()
         {
             MouseOffset = Vector2.zero;
-            _ignoreMouse = 3;
+            _ignoreMouse = 2;
         }
 
         void Update()
@@ -99,17 +100,21 @@ namespace Ashveil
         {
             Vector2 delta = _ignoreMouse > 0 ? Vector2.zero : GameInput.MouseDelta;
             if (_ignoreMouse > 0) _ignoreMouse--;
-            MouseOffset.x = Mathf.Clamp(MouseOffset.x + delta.x / (Screen.height * 0.38f), -1.2f, 1.2f);
-            MouseOffset.y = Mathf.Clamp(MouseOffset.y + delta.y / (Screen.height * 0.38f), -1.2f, 1.2f);
-            Vector2 n = MouseOffset;
-            if (n.magnitude < MouseDeadzone) n = Vector2.zero;
-            else n = n.normalized * ((n.magnitude - MouseDeadzone) / (1.2f - MouseDeadzone));
+            if (Mathf.Abs(delta.x) < 0.4f) delta.x = 0f;
+            if (Mathf.Abs(delta.y) < 0.4f) delta.y = 0f;
 
             _boostTurn = GameInput.Mouse(1);
-            float boost = _boostTurn ? 1.55f : 1f;
-            transform.Rotate(Vector3.right, -n.y * PitchRate * boost * dt, Space.Self);
-            transform.Rotate(Vector3.up, n.x * YawRate * boost * dt, Space.Self);
-            AutoLevelRoll(dt);
+            float boost = _boostTurn ? 1.7f : 1f;
+            transform.Rotate(Vector3.right, -delta.y * MouseSens * boost, Space.Self);
+            transform.Rotate(Vector3.up, delta.x * MouseSens * boost * 0.85f, Space.Self);
+
+            MouseOffset = Vector2.Lerp(MouseOffset, Vector2.zero, 1f - Mathf.Exp(-10f * dt));
+            MouseOffset.x = Mathf.Clamp(MouseOffset.x + delta.x * 0.012f, -1.2f, 1.2f);
+            MouseOffset.y = Mathf.Clamp(MouseOffset.y + delta.y * 0.012f, -1.2f, 1.2f);
+
+            bool rollHeld = GameInput.Key(KeyCode.A) || GameInput.Key(KeyCode.D)
+                || GameInput.Key(KeyCode.LeftArrow) || GameInput.Key(KeyCode.RightArrow);
+            if (!rollHeld) LevelRoll(dt);
 
             float roll = 0f;
             if (GameInput.Key(KeyCode.A) || GameInput.Key(KeyCode.LeftArrow)) roll -= 1f;
@@ -141,14 +146,19 @@ namespace Ashveil
             if (GameInput.MouseDown(1) && Group == WeaponGroup.Missiles) TryFire();
         }
 
-        void AutoLevelRoll(float dt)
+        Vector3 FlatForward()
+        {
+            Vector3 flat = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+            if (flat.sqrMagnitude < 1e-6f) return Vector3.forward;
+            return flat.normalized;
+        }
+
+        void LevelRoll(float dt)
         {
             Vector3 flatRight = Vector3.Cross(Vector3.up, transform.forward);
             if (flatRight.sqrMagnitude < 0.001f) return;
             float bank = Vector3.SignedAngle(flatRight.normalized, transform.right, transform.forward);
-            if (!GameInput.Key(KeyCode.A) && !GameInput.Key(KeyCode.D)
-                && !GameInput.Key(KeyCode.LeftArrow) && !GameInput.Key(KeyCode.RightArrow))
-                transform.Rotate(Vector3.forward, -bank * 1.8f * dt, Space.Self);
+            transform.Rotate(Vector3.forward, -bank * (1f - Mathf.Exp(-4f * dt)), Space.Self);
         }
 
         void Integrate(float dt)
@@ -163,39 +173,74 @@ namespace Ashveil
 
             _speed = Mathf.MoveTowards(_speed, targetSpeed, 55f * dt);
 
-            Vector3 desired = transform.forward * _speed;
+            float sx = 0f, sy = 0f;
             if (PlayerControlled)
             {
-                float sx = 0f, sy = 0f;
                 if (GameInput.Key(KeyCode.Q)) sx -= 1f;
                 if (GameInput.Key(KeyCode.E)) sx += 1f;
                 if (GameInput.Key(KeyCode.R)) sy += 1f;
                 if (GameInput.Key(KeyCode.F) || GameInput.Key(KeyCode.X)) sy -= 1f;
-                desired += transform.right * sx * 55f;
-                desired += transform.up * sy * 45f;
             }
 
-            Velocity = Vector3.Lerp(Velocity, desired, 1f - Mathf.Exp(-SpeedFollow * dt));
+            Vector3 desiredH;
+            float desiredY;
+            if (!PlayerControlled)
+            {
+                desiredH = Vector3.ProjectOnPlane(transform.forward * _speed, Vector3.up);
+                desiredY = transform.forward.y * _speed;
+            }
+            else
+            {
+                Vector3 strafe = Vector3.ProjectOnPlane(transform.right, Vector3.up) * sx * 55f;
+                desiredH = FlatForward() * _speed + strafe;
+                float pitchRad = Mathf.Asin(Mathf.Clamp(transform.forward.y, -1f, 1f));
+                desiredY = sy * 45f;
+                if (Mathf.Abs(pitchRad) > 4f * Mathf.Deg2Rad)
+                    desiredY += Mathf.Sin(pitchRad) * _speed;
+            }
+
+            Vector3 velH = Vector3.ProjectOnPlane(Velocity, Vector3.up);
+            velH = Vector3.Lerp(velH, desiredH, 1f - Mathf.Exp(-SpeedFollow * dt));
+            Velocity = velH;
+            Velocity.y = desiredY;
             transform.position += Velocity * dt;
         }
 
         void Ground()
         {
-            if (Physics.Raycast(transform.position + Vector3.up * 12f, Vector3.down, out var hit, 8000f, ~0, QueryTriggerInteraction.Ignore))
+            Vector3 origin = transform.position + Vector3.up * 20f;
+            var hits = Physics.RaycastAll(origin, Vector3.down, 8000f, ~0, QueryTriggerInteraction.Ignore);
+            RaycastHit hit = default;
+            float best = float.MaxValue;
+            bool found = false;
+            for (int i = 0; i < hits.Length; i++)
             {
-                _alt = hit.distance - 12f - 1.8f;
-                if (_alt < 1.6f)
-                {
-                    float impact = -Vector3.Dot(Velocity, hit.normal);
-                    transform.position = hit.point + hit.normal * 2.4f;
-                    Velocity = Vector3.ProjectOnPlane(Velocity, hit.normal);
-                    _speed = Velocity.magnitude;
-                    _alt = 2.4f;
-                    if (impact > 32f && PlayerControlled)
-                        Unit.ApplyDamage(impact * 0.85f, null);
-                }
+                Transform t = hits[i].collider.transform;
+                if (t == transform || t.IsChildOf(transform)) continue;
+                if (hits[i].distance >= best) continue;
+                best = hits[i].distance;
+                hit = hits[i];
+                found = true;
             }
-            else _alt = transform.position.y;
+
+            if (!found)
+            {
+                _alt = transform.position.y - WorldBuilder.Height(transform.position.x, transform.position.z);
+                return;
+            }
+
+            _alt = hit.distance - 20f;
+            if (_alt < 2f)
+            {
+                float impact = -Vector3.Dot(Velocity, hit.normal);
+                transform.position = hit.point + hit.normal * 2.4f;
+                Velocity = Vector3.ProjectOnPlane(Velocity, hit.normal);
+                if (PlayerControlled) Velocity.y = Mathf.Max(0f, Velocity.y);
+                _speed = Vector3.ProjectOnPlane(Velocity, Vector3.up).magnitude;
+                _alt = 2.4f;
+                if (impact > 32f && PlayerControlled)
+                    Unit.ApplyDamage(impact * 0.85f, null);
+            }
         }
 
         void Recharge(float dt)

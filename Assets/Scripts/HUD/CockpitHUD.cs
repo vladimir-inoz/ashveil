@@ -210,8 +210,9 @@ namespace Ashveil
             GUI.color = Color.white;
             GUI.Label(new Rect(24, Screen.height * 0.42f, 180, 28), $"TAS  {p.TasKmh:0} км/ч", _label);
             GUI.Label(new Rect(24, Screen.height * 0.42f + 26, 180, 24), $"ГАЗ  {p.Throttle * 100:0}%", _small);
-            GUI.Label(new Rect(Screen.width - 200, Screen.height * 0.42f, 180, 28), $"ВЫС  {p.Altitude:0} м", _label);
-            GUI.Label(new Rect(Screen.width - 200, Screen.height * 0.42f + 26, 180, 24), $"КУРС {p.Heading:000}°", _small);
+            GUI.Label(new Rect(Screen.width - 220, Screen.height * 0.42f, 200, 28), $"ВЫС  {p.transform.position.y:0} м", _label);
+            GUI.Label(new Rect(Screen.width - 220, Screen.height * 0.42f + 26, 200, 24), $"В/С  {p.Velocity.y:+0.0} м/с", _small);
+            GUI.Label(new Rect(Screen.width - 220, Screen.height * 0.42f + 48, 200, 24), $"AGL {p.Altitude:0}   {p.Heading:000}°", _small);
 
             string gun = p.Group == WeaponGroup.Plasma ? "ПЛАЗМА" : p.Group == WeaponGroup.Cannon ? "ПУШКА" : "РАКЕТЫ";
             string ammo = p.Group == WeaponGroup.Plasma ? $"{p.Energy:0} э" : p.Group == WeaponGroup.Cannon ? $"{p.CannonAmmo}" : $"{p.Missiles}";
